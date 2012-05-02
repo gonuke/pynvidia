@@ -81,6 +81,7 @@ def rationalize_metamode_dict(dpy_modes):
     dpy_modes_new = {}
 
     # get list of displays
+    update_displays()
     dpylist = get_displays()
 
     # make sure there is one entry per display
@@ -95,7 +96,7 @@ def rationalize_metamode_dict(dpy_modes):
     return dpy_modes_new
 
 # turn metamode string into a dictionary of display modes
-def parse_metamode_string(modeStr):
+def metamode_string2dict(modeStr):
     
     # initialize dictionary
     dpy_modes = {}
@@ -116,7 +117,7 @@ def parse_metamode_string(modeStr):
     return dpy_modes
 
 # turn dictionary of display modes into a metamode string
-def create_metamode_string(dpy_modes):
+def metamode_dict2string(dpy_modes):
 
     # initialize lists
     modeStr    = ""
@@ -140,6 +141,7 @@ def create_metamode_string(dpy_modes):
 def enable_displays(display_resolution_map):
     
     # get list of displays
+    update_displays()
     displays=get_displays()
 
     # get list of metamodes
@@ -156,7 +158,7 @@ def enable_displays(display_resolution_map):
         dpy_modes[display] = {'enabled':True,'resolution':resolution}
 
     # build metamode string for desired state
-    metaModeStr = create_metamode_string(dpy_modes)
+    metaModeStr = metamode_dict2string(dpy_modes)
 
     # get the metamode ID for that state
     mode_id = [k for k, v in metamodes.iteritems() if v == metaModeStr]
@@ -180,14 +182,14 @@ def hide_this():
     print dpylist
     modelist = get_metamodes()
 # print modelist
-    tstMode = create_metamode_string({"DFP-1":{'enabled':True,"resolution":"1200x900"},
+    tstMode = metamode_dict2string({"DFP-1":{'enabled':True,"resolution":"1200x900"},
                                       "DFP-3":{'enabled':True,"resolution":"1600x900"}})
     print tstMode
-    modeDict = parse_metamode_string(tstMode)
+    modeDict = metamode_string2dict(tstMode)
     print modeDict
     modeDictFill = rationalize_metamode_dict(modeDict)
     print modeDictFill
-    tstModeFill = create_metamode_string(modeDictFill)
+    tstModeFill = metamode_dict2string(modeDictFill)
     print tstModeFill
 
 def test_update():

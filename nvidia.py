@@ -1,4 +1,4 @@
-]#!/usr/bin/python
+#!/usr/bin/python
 
 NV_DEFAULT_RESOLUTION="1028x768"
 

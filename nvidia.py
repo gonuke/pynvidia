@@ -20,8 +20,7 @@ def update_displays():
 def get_displays():
     
     # get the list from nv-control-dpy
-    nv_display_list = subprocess.check_output(["/home/wilsonp/opt/bin/nv-control-dpy",
-                                               "--get-associated-dpys"]).splitlines()
+    nv_display_list = nv_control_dpy(["--get-associated-dpys"]).splitlines()
     
     # set the regexp
     dpy_id_RE = re.compile(r" +([A-Za-z0-9-]+) \(0x[0-9a-f]+\): (.*)$")

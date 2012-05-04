@@ -1,7 +1,5 @@
 #!/usr/bin/python
 
-NV_DEFAULT_RESOLUTION="1028x768"
-
 import subprocess
 import re
 
@@ -9,12 +7,70 @@ import re
 def nv_control_dpy(args):
     return subprocess.check_output(["/home/wilsonp/opt/bin/nv-control-dpy"]+args)
 
-### GET DISPLAY INFO ###
+### DISPLAYS & DEVICES ####
 
 # probe the GPU for the currently attached displays
-def update_displays():
+def probe_displays():
+    return nv_control_dpy(["--probe-dpys"])
 
-    nv_control_dpy(["--probe-dpys"])
+# invoke twinview
+def dynamic_twinview():
+    return nv_control_dpy(["--dynamic-twinview"])
+
+# update the state for manipulating multi-head system
+def update_displays():
+    probe_displays()
+    try:
+        dynamic_twinview()
+    except subprocess.CalledProcessError:
+        print "Twinview already invoked"
+        pass
+
+# build a database of modes for each display
+def build_modeDB():
+
+    nv_mode_stdout = nv_control_dpy(["--print-modelines"]).splitlines()
+
+    modeDB = {}
+
+    for line in nv_mode_stdout:
+        if "0x000" in line:
+            # process port:device line
+            tokens  = line.split()
+            device = ''.join(tokens[2:])
+            #print "Adding device: " + device
+            modeDB[device] = {}
+            modeDB[device]['port'] = tokens[0]
+            modeDB[device]['mask'] = tokens[1]
+            modeDB[device]['modelist'] = {}
+            modeDB[device]['maxWmode'] = "0x0"
+            modeDB[device]['maxHmode'] = "0x0"
+            modeDB[device]['maxW'] = 0
+            modeDB[device]['maxH'] = 0
+        if "Modelines for" in line:
+            # process device header
+            tokens = line.split()
+            # device may have white space (?) and strip trailing colon
+            device = ''.join(tokens[2:])[:-1]
+            #print "Processing mode lines for device: " + device
+        if "::" in line:
+            # process modeline
+            [metadata,modeline]=line.split(" :: ")
+            modedata = modeline.split()
+            # strip quotation marks
+            mode = modedata[0][1:-1]
+            modeDB[device]['modelist'][mode] = modedata[1:]
+            if 'nvidia-auto-select' not in mode:
+                modeW = int(modedata[2])
+                if modeW > modeDB[device]['maxW']:
+                    modeDB[device]['maxW'] = modeW
+                    modeDB[device]['maxWmode'] = mode
+                modeH = int(modedata[6])
+                if modeH > modeDB[device]['maxH']:
+                    modeDB[device]['maxH'] = modeH
+                    modeDB[device]['maxHmode'] = mode
+
+    return modeDB
 
 # get the list of the currently attached displays
 def get_displays():
@@ -39,7 +95,7 @@ def get_displays():
 ### GET METAMODE INFO ###
 
 # get the current list of metamodes
-def get_metamodes():
+def get_all_metamodes():
     
     # get the list from nv-control-dpy
     metamode_list = nv_control_dpy(["--print-metamodes"]).splitlines()
@@ -52,8 +108,19 @@ def get_metamodes():
 
     # for each mode that matches, add it to the dictionary
     for mode in metamode_list:
-        if (mode_id_RE.match(mode)):
-            metamode[mode_id_RE.match(mode).group(1)] = mode_id_RE.match(mode).group(2)
+        if "::" in mode:
+            [nv_info,modeString] = mode.split(" :: ")
+            nv_info_list = nv_info.split(", ")
+
+            [k,mode_id] = nv_info_list[0].split("=")
+            metamode[mode_id] = {}
+
+            [k,v] = nv_info_list[1].split("=")
+            metamode[mode_id][k] = v
+            [k,v] = nv_info_list[2].split("=")
+            metamode[mode_id][k] = v
+
+            metamode[mode_id]['details'] = metamode_string2dict(modeString)
 
     return metamode
 
@@ -66,13 +133,47 @@ def get_current_metamode():
     # set the regexp to match
     mode_id_RE = re.compile(r".*id=(\d+).*:: (.*)")
     
+    mode_id = -1
+
     # for each mode that matches, add it to t
     for metamode in nv_metamode_list:
+        print metamode
         if (mode_id_RE.match(metamode)):
-            return mode_id_RE.match(metamode).group(1)
+            mode_id = mode_id_RE.match(metamode).group(1)
+            print mode_id
 
-    # return -1 for no found mode
-    return -1
+    # return 
+    return mode_id
+
+def add_metamode(modeString):
+    
+    add_response = nv_control_dpy(["--add-metamode","'"+modeString+"'"])
+    
+    # extract mode id from add_response
+    mode_id_RE = re.compile(r'.*id=(\d+).*')
+
+    mode_id = -1
+
+    if (mode_id_RE.match(add_response)):
+        mode_id = mode_id_RE.match(add_response).group(1)
+
+    return mode_id
+
+def delete_metamode(mode_id):
+
+    nv_metamode_list = get_all_metamodes()
+
+    if mode_id in nv_metamode_list:
+        nv_control_dpy(["--delete-metamode",nv_metamode_list[mode_id]])
+
+
+def delete_all_metamodes_except(mode_id_list):
+
+    nv_metamode_list = get_all_metamodes()
+
+    for key in nv_metamode_list:
+        if key not in mode_id_list:
+            nv_control_dpy(["--delete-metamode",nv_metamode_list[key]])
 
 ### TRANSLATE MODE INFO ###
 # ensure metamode dictionary has entry for every display
@@ -81,7 +182,7 @@ def rationalize_metamode_dict(dpy_modes):
     dpy_modes_new = {}
 
     # get list of displays
-    update_displays()
+    probe_displays()
     dpylist = get_displays()
 
     # make sure there is one entry per display
@@ -101,18 +202,30 @@ def metamode_string2dict(modeStr):
     # initialize dictionary
     dpy_modes = {}
 
-    # setup regexp for match
-    mode_info_RE = re.compile(r"([a-zA-Z0-9-]+): ([0-9]+x[0-9]+) @([0-9]+x[0-9])")
-
     # split modelist into individual display modes
     modeList = modeStr.split(", ")
 
     # add dictionary entry for each display in metamode
     for dpyMode in modeList:
-        if mode_info_RE.match(dpyMode):
-            reData = mode_info_RE.match(dpyMode)
-            dpy_modes[reData.group(1)] = {'enabled':True,
-                                          'resolution':reData.group(2)}
+        [display,data] = dpyMode.split(':')
+        tokens = data.split()
+        if len(tokens)>1:
+            [mode,resolution,offset] = tokens
+            [offsetX,offsetY] = offset[1:].split('+')
+            dpy_modes[display] = {'enabled':True,
+                                  'mode':mode,
+                                  'resolution':resolution[1:],
+                                  'offset':offset,
+                                  'offsetX':offsetX,
+                                  'offsetY':offsetY}
+        else:
+            mode = tokens[0]
+            offset = ''
+            resolution = ''
+            dpy_modes[display] = {'enabled':False},
+
+    dpy_modes = rationalize_metamode_dict(dpy_modes)
+
     # return dictionary
     return dpy_modes
 
@@ -124,10 +237,10 @@ def metamode_dict2string(dpy_modes):
     modeStrOff = ""
 
     # for each display
-    for display,modeInfo in dpy_modes.iteritems():
-        if modeInfo['enabled']:
+    for display,modeDetails in dpy_modes['details'].iteritems():
+        if modeDetails['enabled']:
             # Add to list of turned on modes
-            modeStr    += ", " + display + ": " + modeInfo['resolution'] + " @" + modeInfo['resolution'] + " +0+0"
+            modeStr    += ", " + display + ": " + modeDetails['mode'] + " @" + modeDetails['resolution'] + " " + modeDetails['offset']
         else:
             # Add to list of turned off modes
             modeStrOff += ", " + display + ": NULL"
@@ -138,14 +251,28 @@ def metamode_dict2string(dpy_modes):
     return modeStr[2:]
 
 ### Modify state ###
+def switch_mode(mode_id):
+
+    # get the metamode infor for mode_id
+
+    # delete all metamodes except for the current and the new
+
+    # calculate total width & height based on resolution and offsets
+    #  (check for 0)
+
+    # call xrandr to select mode
+
+    # delete old mode
+    pass
+
 def enable_displays(display_resolution_map):
     
     # get list of displays
-    update_displays()
+    probe_displays()
     displays=get_displays()
 
     # get list of metamodes
-    metamodes=get_metamodes()
+    metamodes=get_all_metamodes()
 
     # loop through list of available displays
     # to create array of display states
@@ -170,27 +297,20 @@ def enable_displays(display_resolution_map):
 def enable_single_display(display_name,resolution):
     return enable_displays({display_name:resolution})
 
-def hide_this():
-    modeList = get_metamodes()
-    print modeList['114']
-    print [k for k,v in modeList.iteritems() if v == modeList['114']][0]
-    
-    print enable_displays({'DFP-3':'400x300'})
 
-    update_displays()
-    dpylist = get_displays()
-    print dpylist
-    modelist = get_metamodes()
-# print modelist
-    tstMode = metamode_dict2string({"DFP-1":{'enabled':True,"resolution":"1200x900"},
-                                      "DFP-3":{'enabled':True,"resolution":"1600x900"}})
-    print tstMode
-    modeDict = metamode_string2dict(tstMode)
-    print modeDict
-    modeDictFill = rationalize_metamode_dict(modeDict)
-    print modeDictFill
-    tstModeFill = metamode_dict2string(modeDictFill)
-    print tstModeFill
+metamodeDB = get_all_metamodes()
+mode126 = metamodeDB['126']
+print mode126
+mode126tst = metamode_dict2string(mode126)
+print mode126tst
 
-def test_update():
-    update_displays()
+newMode = {}
+newMode['details'] = {}
+newMode['details']['CRT-0'] = {'enabled':False}
+newMode['details']['DFP-3'] = {'enabled':True,
+                               'mode':"1600x900",
+                               'resolution':"1600x900",
+                               'offset':"+0+0",
+                               'offsetX':0,
+                               'offsetY':0}
+print metamode_dict2string(newMode)

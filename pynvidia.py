@@ -186,6 +186,7 @@ def get_current_metamode():
     # return 
     return mode_id
 
+
 # search the metamode list by the modestring
 def find_metamode(modeString):
 
@@ -212,6 +213,15 @@ def add_metamode(modeString):
     for line in add_response_lines:
         if (mode_id_RE.match(line)):
             mode_id = int(mode_id_RE.match(line).group(1))
+
+    return mode_id
+
+# search for metamode and add if not found
+def find_or_add(mode_str):
+    mode_id = find_metamode(mode_str)
+
+    if mode_id < 0:
+        mode_id = add_metamode(mode_str)
 
     return mode_id
 

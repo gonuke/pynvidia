@@ -25,6 +25,9 @@ A dictionary of fundamental display modes is generated with
 build_modeDB(), returning a dictionary in which each key is the name
 of a connected device and the value is another dictionary with the
 following information:
+
+::
+
    'port' => string describing the port to which this device is attached
    'mask' => hex string returned by NVidia tools
    'maxResMode' => string referring to the video mode with maximum # of pixels
@@ -38,6 +41,9 @@ following information:
 A dictionary of metamodes is generated with get_all_metamodes(),
 returning a dictionary in which each key is an integer mode ID, and
 each value is a dictionary of the following data:
+
+::
+
     <key> => <value> : a variety of key/value pairs are parsed as is and stored
     'details' =>
          <port> string identifying port =>

@@ -159,6 +159,8 @@ if (len(sys.argv) > 1):
         new_mode = toggle_single_desktop_modes(modeDB)
     elif (sys.argv[1] == '2'):
         new_mode = toggle_extended_desktop_modes(modeDB)
+    # update metaModeDB
+    metaModeDB = pynvidia.get_all_metamodes()
 
 if new_mode > 0:
     # print new_mode

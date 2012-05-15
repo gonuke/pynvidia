@@ -144,6 +144,8 @@ def toggle_extended_desktop_modes(modeDB):
 
     return cycle_modes(modeDB,custom_mode_list[0:2]+custom_mode_list[3:])
 
+
+pynvidia.update_displays()
     
 modeDB = pynvidia.build_modeDB()
 metaModeDB = pynvidia.get_all_metamodes()
